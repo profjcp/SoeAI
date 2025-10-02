@@ -1,0 +1,82 @@
+# Ficha del Programa: Maestría en Ciencia de Datos e Inteligencia Artificial
+
+## 1. Información General y Resumen
+- **Nombre del Programa:** Maestría en Ciencia de Datos e Inteligencia Artificial (1° Versión)
+- **Tipo:** Maestría
+- **Unidad de Posgrado:** School Of Engineering - Facultad de Ciencias de la Computación U.A.G.R.M.
+- **Modalidad:** Online (Clases en vivo)
+- **Duración Total:** 16 meses (3 semestres)
+- **Créditos Académicos:** 64 ECTS
+- **Resumen Corto:** Este programa está diseñado para profesionales que buscan liderar proyectos innovadores y desarrollar sistemas inteligentes basados en algoritmos de inteligencia artificial, con un enfoque práctico y ético.
+
+---
+
+## 2. Fechas Clave y Horarios
+- **Fecha de Inicio de la Próxima Edición:** Martes, 2 de septiembre de 2025
+- **Fecha Límite de Inscripción:** Viernes, 29 de agosto de 2025
+- **Horario de Clases:**
+    - Martes: 19:00 - 22:00 (Hora de Bolivia)
+    - Jueves: 19:00 - 22:00 (Hora de Bolivia)
+
+---
+
+## 3. Costos, Inversión y Formas de Pago
+- **Costo Total del Programa:** 24.200 Bs. (Veinticuatro mil doscientos bolivianos)
+- **Costo de Matrícula:** 2.000 Bs.
+- **Costo de Derecho a Estudio:** 18.000 Bs.
+- **Costo de Defensa:** 4.200 Bs.
+- **Plan de Pagos:** El derecho a estudio puede ser pagado en 12 cuotas mensuales de 1.500 Bs.
+- **Descuentos Disponibles:**
+    - 10% de descuento por inscripción temprana.
+    - 15% de descuento para grupos de 3 o más personas.
+    - 20% de descuento por pago al contado.
+    - 30% de descuento por convenios interinstitucionales.
+- **Formas de Pago:** Transferencia bancaria.
+
+---
+
+## 4. Perfil de Ingreso y Requisitos
+- **Dirigido a:** Ingenieros en sistemas, informáticos, industriales, estadísticos y profesionales con experiencia en áreas de tecnología y análisis de datos.
+- **Requisitos de Admisión:**
+    - Título de Licenciatura (2 copias legalizadas).
+    - Cédula de identidad vigente (2 copias).
+    - Formulario de inscripción completo.
+    - Curriculum Vitae actualizado.
+    - 3 Fotos de 3x4 fondo rojo.
+
+---
+
+## 5. Contenidos Mínimos y Plan de Estudios
+Este programa se estructura con 2 certificaciones intermedias distribuidos de acuerdo a los siguientes módulos:
+
+    - Módulo 1: Fundamentos de Ingeniería de Software para Científicos de Datos.
+    - Módulo 2: Data, Big Data and Open Data.
+    - Módulo 3: Cloud Computing e Infraestructura para Big Data.
+    - Módulo 4: Data Management and Business Intelligence.
+    - Módulo 5: Análisis Estadístico de Datos.
+    - Módulo 6: Metodología de la Investigación.
+- **Diplomado: INGENIERÍA DE DATOS Y ANALÍTICA AVANZADA**
+
+    - Módulo 7: Data Visualization and Visual Analytics.
+    - Módulo 8: Machine Learning and Deep Learning.
+    - Módulo 9: Data Mining.
+    - Módulo 10: Natural Language Processing (NLP), Text Analytics and Search.
+    - Módulo 11: Taller de Tesis I.
+- **Diplomado: MACHINE LEARNING Y ANÁLISIS DE INFORMACIÓN AVANZADA**
+
+    - Módulo 12: Practicing Data Science.
+    - Módulo 13: Generative Models and Computer Vision.
+    - Módulo 14: ML-Ops y Puesta en Producción.
+    - Módulo 15: Taller de Desarrollo de Habilidades Gerenciales.
+    - Módulo 16: Taller de Tesis II.
+- **Maestría: CIENCIA DE DATOS E INTELIGENCIA ARTIFICIAL**
+
+---
+
+## 6. Docentes y Plantel Académico
+- **MSc. Edwin Rene Salcedo Aliaga:** Maestría con Distinction en Advanced Software Engineerin. Experto en desarrollo e investigación en machine learning, visión artificial, ingeniería de software e IoT.
+- **MSc. Danny Luis Huanca Sevilla:** Maestría en Estadística Aplicada. Especialista en el Área de Ciencia de Datos, Datawarehouse, Data Mining y Ciencia de Datos.
+- **MSc. Renzo Franck Claure Arena:** Maestría en Estadística Aplicada. Experto en Análisis de Información, Machine Learning, Deep Learning y Data Mining.
+- **MSc. Juan Marcelo Claure Salinas:** Maestría en Software Engineering. Experto en Data Engineering Processes, Relational Data Modelin y Database Development Processes.
+- **PhD. Luis Roberto Pérez Ríos :** Doctorado en Ciencias de la Edución. Experto en Arquitecto de Software y Especialista en Desarrollo de Software.
+- **Coordinador Académico:** MSc. Jessy Carrillo Martínez
