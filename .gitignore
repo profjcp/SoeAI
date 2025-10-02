@@ -1,0 +1,30 @@
+# Virtual environment
+aivenv/
+.venv/
+venv/
+venvai/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Dependencies
+node_modules/
+
+# Environment variables
+.env

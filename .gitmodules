@@ -1,0 +1,3 @@
+[submodule "SoeAI"]
+	path = SoeAI
+	url = https://github.com/profjcp/SoeAI.git
