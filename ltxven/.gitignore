@@ -1,0 +1,9 @@
+.venv/
+.env
+__pycache__/
+*.pyc
+output/*.pdf
+output/*.tex
+output/*.log
+output/*.aux
+output/*.out
