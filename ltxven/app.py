@@ -23,6 +23,39 @@ from core.ollama_client import texto_a_latex
 from core.pdf_compiler import compilar_pdf
 
 
+DEFAULT_OLLAMA_MODEL = "llama3.2"
+
+
+def _modelo_base() -> str:
+    return (os.getenv("OLLAMA_MODEL", DEFAULT_OLLAMA_MODEL) or DEFAULT_OLLAMA_MODEL).strip()
+
+
+def _modelo_fallback() -> str:
+    return (os.getenv("OLLAMA_FALLBACK_MODEL", DEFAULT_OLLAMA_MODEL) or DEFAULT_OLLAMA_MODEL).strip()
+
+
+def _resolver_modelos(modelo_preferido: str) -> list[str]:
+    principal = (modelo_preferido or "").strip() or _modelo_base()
+    fallback = _modelo_fallback()
+    modelos = [principal]
+    if fallback and fallback not in modelos:
+        modelos.append(fallback)
+    return modelos
+
+
+def _generar_seccion_con_fallback(seccion: str, texto: str, norma: str, modelos: list[str]) -> tuple[str, str]:
+    ultimo_error: Exception | None = None
+    for modelo in modelos:
+        try:
+            return texto_a_latex(seccion, texto, norma, modelo=modelo), modelo
+        except Exception as error:  # noqa: PERF203
+            ultimo_error = error
+
+    raise RuntimeError(
+        f"No se pudo convertir la sección '{seccion}' con los modelos: {', '.join(modelos)}"
+    ) from ultimo_error
+
+
 def _escape_latex_plain(text: str) -> str:
     replacements = {
         "\\": r"\textbackslash{}",
@@ -88,14 +121,31 @@ def _rich_html_to_text(html_content: str) -> str:
 def _restaurar_payload(payload: dict) -> None:
     st.session_state["norma_select"] = payload.get("norma", "IEEE")
     st.session_state["toggle_rich_editor"] = payload.get("usar_editor_enriquecido", True)
-    st.session_state["modelo_input"] = payload.get("modelo", os.getenv("OLLAMA_MODEL", "llama3.2"))
+    st.session_state["modelo_input"] = payload.get("modelo", _modelo_base())
     st.session_state["nombre_archivo_input"] = payload.get("nombre_archivo", "articulo")
 
     secciones = payload.get("secciones", {})
+    secciones_raw = payload.get("secciones_raw", {})
+
+    def _texto_a_html_simple(valor: str) -> str:
+        if not valor.strip():
+            return ""
+        lineas = [linea.strip() for linea in valor.splitlines() if linea.strip()]
+        return "".join(f"<p>{linea}</p>" for linea in lineas)
+
+    if "restore_nonce" not in st.session_state:
+        st.session_state["restore_nonce"] = 0
+    st.session_state["restore_nonce"] += 1
+
     if isinstance(secciones, dict):
         for clave, valor in secciones.items():
-            st.session_state[f"field_{clave}"] = str(valor or "")
-            st.session_state[f"quill_{clave}"] = str(valor or "")
+            texto_plano = str(valor or "")
+            st.session_state[f"field_{clave}"] = texto_plano
+
+            if isinstance(secciones_raw, dict) and clave in secciones_raw:
+                st.session_state[f"quill_seed_{clave}"] = str(secciones_raw.get(clave) or "")
+            else:
+                st.session_state[f"quill_seed_{clave}"] = _texto_a_html_simple(texto_plano)
 
 
 load_dotenv()
@@ -109,12 +159,15 @@ if "norma_select" not in st.session_state:
 if "toggle_rich_editor" not in st.session_state:
     st.session_state["toggle_rich_editor"] = True
 if "modelo_input" not in st.session_state:
-    st.session_state["modelo_input"] = os.getenv("OLLAMA_MODEL", "llama3.2")
+    st.session_state["modelo_input"] = _modelo_base()
 if "nombre_archivo_input" not in st.session_state:
     st.session_state["nombre_archivo_input"] = "articulo"
+if "restore_nonce" not in st.session_state:
+    st.session_state["restore_nonce"] = 0
 
 with st.sidebar:
     st.subheader("📚 Histórico")
+    st.caption("Modo de generación activo: seccional (estable)")
     snapshots = list_snapshots(limit=20)
     opciones = [""] + [f"{item['run_id']} | {item.get('status', 'pending')}" for item in snapshots]
     seleccion = st.selectbox("Recuperar ejecución", opciones)
@@ -157,26 +210,37 @@ campos = [
 ]
 
 entradas: dict[str, str] = {}
+entradas_raw: dict[str, str] = {}
 for clave, etiqueta, tipo, alto in campos:
     if tipo == "input":
-        entradas[clave] = st.text_input(etiqueta, key=f"field_{clave}")
+        valor_input = st.text_input(etiqueta, key=f"field_{clave}")
+        entradas[clave] = valor_input
+        entradas_raw[clave] = valor_input
     else:
         if usar_editor_enriquecido and st_quill is not None:
             st.markdown(f"**{etiqueta}**")
+            quill_key = f"quill_{clave}_{st.session_state.get('restore_nonce', 0)}"
             contenido_html = st_quill(
-                key=f"quill_{clave}",
-                value=st.session_state.get(f"quill_{clave}", ""),
+                key=quill_key,
+                value=st.session_state.get(f"quill_seed_{clave}", ""),
                 placeholder=f"Escribe aquí: {etiqueta}",
                 html=True,
                 toolbar=None,
             )
             entradas[clave] = _rich_html_to_text(contenido_html)
+            entradas_raw[clave] = contenido_html or ""
+            st.session_state[f"quill_seed_{clave}"] = contenido_html or st.session_state.get(
+                f"quill_seed_{clave}", ""
+            )
         else:
-            entradas[clave] = st.text_area(etiqueta, height=alto, key=f"field_{clave}")
+            valor_text_area = st.text_area(etiqueta, height=alto, key=f"field_{clave}")
+            entradas[clave] = valor_text_area
+            entradas_raw[clave] = valor_text_area
 
 col1, col2 = st.columns([1, 1])
 with col1:
     modelo = st.text_input("🤖 Modelo Ollama", key="modelo_input")
+    st.caption(f"Modelo recomendado para estabilidad: `{DEFAULT_OLLAMA_MODEL}`")
 with col2:
     nombre_archivo = st.text_input("📁 Nombre de salida", key="nombre_archivo_input")
 
@@ -184,9 +248,11 @@ if st.button("🚀 Generar PDF", type="primary"):
     payload_snapshot = {
         "norma": norma,
         "usar_editor_enriquecido": usar_editor_enriquecido,
+        "modo_batch": False,
         "modelo": modelo,
         "nombre_archivo": nombre_archivo,
         "secciones": entradas,
+        "secciones_raw": entradas_raw,
     }
     run_id = save_snapshot(payload_snapshot)
 
@@ -200,9 +266,13 @@ if st.button("🚀 Generar PDF", type="primary"):
     try:
         tiempo_ollama_total = 0.0
         tiempo_por_seccion: dict[str, float] = {}
+        modelos_usados: set[str] = set()
         etiquetas_campos = {clave: etiqueta for clave, etiqueta, _, _ in campos}
         secciones_metadata = {"title", "authors", "keywords"}
+        secciones_ollama = {k: v for k, v in secciones_no_vacias.items() if k not in secciones_metadata}
+        modelos_preferidos = _resolver_modelos(modelo)
         total_pasos = len(secciones_no_vacias) + 3
+
         paso_actual = 0
 
         etapa_actual = st.empty()
@@ -212,28 +282,22 @@ if st.button("🚀 Generar PDF", type="primary"):
         with st.status("Generando documento...", expanded=True) as status:
             etapa_actual.info("⏳ Etapa actual: Preparando datos de entrada")
             status.write("Preparando secciones no vacías...")
+            status.write(f"Modelos en orden de uso: {', '.join(modelos_preferidos)}")
             paso_actual += 1
             progress.progress(paso_actual / total_pasos, text=f"Etapa {paso_actual}/{total_pasos}: Preparación")
 
             latex_secciones: dict[str, str] = {}
 
-            for index, (clave, texto) in enumerate(secciones_no_vacias.items(), start=1):
-                nombre_seccion = etiquetas_campos.get(clave, clave)
-                detalle_etapa.caption(f"Procesando sección {index}/{len(secciones_no_vacias)}")
+            metadata_items = [(k, v) for k, v in secciones_no_vacias.items() if k in secciones_metadata]
 
-                if clave in secciones_metadata:
-                    etapa_actual.info(f"⏳ Etapa actual: Formateando sección '{nombre_seccion}'")
-                    status.write(f"Formato local: preparando sección '{nombre_seccion}'...")
-                    inicio_seccion = time.perf_counter()
-                    latex_secciones[clave] = _metadata_a_latex(clave, texto)
-                    duracion_seccion = time.perf_counter() - inicio_seccion
-                else:
-                    etapa_actual.info(f"⏳ Etapa actual: Ollama convirtiendo sección '{nombre_seccion}'")
-                    status.write(f"Ollama: convirtiendo sección '{nombre_seccion}'...")
-                    inicio_seccion = time.perf_counter()
-                    latex_secciones[clave] = texto_a_latex(clave, texto, norma, modelo=modelo)
-                    duracion_seccion = time.perf_counter() - inicio_seccion
-                    tiempo_ollama_total += duracion_seccion
+            for index, (clave, texto) in enumerate(metadata_items, start=1):
+                nombre_seccion = etiquetas_campos.get(clave, clave)
+                detalle_etapa.caption(f"Procesando sección metadata {index}/{len(metadata_items)}")
+                etapa_actual.info(f"⏳ Etapa actual: Formateando sección '{nombre_seccion}'")
+                status.write(f"Formato local: preparando sección '{nombre_seccion}'...")
+                inicio_seccion = time.perf_counter()
+                latex_secciones[clave] = _metadata_a_latex(clave, texto)
+                duracion_seccion = time.perf_counter() - inicio_seccion
 
                 tiempo_por_seccion[clave] = duracion_seccion
 
@@ -242,6 +306,32 @@ if st.button("🚀 Generar PDF", type="primary"):
                     paso_actual / total_pasos,
                     text=f"Etapa {paso_actual}/{total_pasos}: Sección '{nombre_seccion}' completada",
                 )
+
+            if secciones_ollama:
+                for clave, texto in secciones_ollama.items():
+                    nombre_seccion = etiquetas_campos.get(clave, clave)
+                    etapa_actual.info(f"⏳ Etapa actual: Ollama convirtiendo sección '{nombre_seccion}'")
+                    status.write(f"Ollama: convirtiendo sección '{nombre_seccion}'...")
+                    inicio_seccion = time.perf_counter()
+                    latex_generado, modelo_usado = _generar_seccion_con_fallback(
+                        clave,
+                        texto,
+                        norma,
+                        modelos_preferidos,
+                    )
+                    latex_secciones[clave] = latex_generado
+                    modelos_usados.add(modelo_usado)
+                    if modelo_usado != modelos_preferidos[0]:
+                        status.write(f"Sección '{nombre_seccion}' usó fallback: {modelo_usado}")
+                    duracion_seccion = time.perf_counter() - inicio_seccion
+                    tiempo_por_seccion[clave] = duracion_seccion
+                    tiempo_ollama_total += duracion_seccion
+
+                    paso_actual += 1
+                    progress.progress(
+                        paso_actual / total_pasos,
+                        text=f"Etapa {paso_actual}/{total_pasos}: Sección '{nombre_seccion}' completada",
+                    )
 
             etapa_actual.info("⏳ Etapa actual: Ensamblando documento LaTeX")
             detalle_etapa.caption("Insertando secciones en la plantilla seleccionada")
@@ -289,6 +379,11 @@ if st.button("🚀 Generar PDF", type="primary"):
         with st.expander("Ver tiempos por sección (Ollama)"):
             for seccion, duracion in tiempo_por_seccion.items():
                 st.write(f"- {seccion}: {duracion:.2f}s")
+
+        if modelos_usados:
+            st.caption(f"Modelos usados en esta ejecución: {', '.join(sorted(modelos_usados))}")
+
+        st.caption(f"Llamadas estimadas a Ollama: {len(secciones_ollama)}")
 
         with open(ruta_tex, "rb") as tex_file:
             st.download_button(

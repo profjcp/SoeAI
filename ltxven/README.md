@@ -50,6 +50,10 @@ cp .env.example .env
 
 Opcional: editar `.env` para cambiar el modelo.
 
+Configuración recomendada para estabilidad:
+- `OLLAMA_MODEL=llama3.2`
+- `OLLAMA_FALLBACK_MODEL=llama3.2`
+
 ## 5) Levantar servicios
 
 ### Iniciar Ollama
@@ -95,7 +99,7 @@ Accede en:
 
 1. Elige norma IEEE o APA.
 2. Pega texto en las secciones.
-3. Presiona **Generar PDF**.
+3. Presiona **Generar PDF** (la generación se ejecuta en modo seccional para mayor estabilidad).
 4. Descarga `.tex` y `.pdf`.
 
 ## 8) Estructura

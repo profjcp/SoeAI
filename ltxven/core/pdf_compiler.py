@@ -38,6 +38,19 @@ def _auto_reparar_tex(ruta_tex: str) -> bool:
     for linea in contenido_original.splitlines():
         linea_strip = linea.strip()
 
+        # Corrige escapes literales que LaTeX interpreta como comandos inválidos.
+        linea = linea.replace(r"\n", " ").replace(r"\t", " ").replace(r"\r", " ")
+        linea_strip = linea.strip()
+
+        # Extrae contenido textual cuando llega un diccionario serializado del modelo.
+        match_texto = re.match(
+            r"^\{\s*['\"]text['\"]\s*:\s*['\"](.*)['\"]\s*,\s*['\"]title['\"]\s*:",
+            linea_strip,
+        )
+        if match_texto:
+            linea = match_texto.group(1).replace("\\\\", "\\")
+            linea_strip = linea.strip()
+
         if not dentro_abstract_wrapper and (
             linea_strip.startswith(r"\Abstract{")
             or linea_strip.startswith(r"\abstract{")
