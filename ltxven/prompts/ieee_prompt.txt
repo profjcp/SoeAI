@@ -5,6 +5,8 @@ REGLAS ESTRICTAS:
 - Usa solo comandos LaTeX compatibles con plantilla IEEE.
 - NO incluyas \begin{document} ni \end{document}.
 - NO incluyas preámbulo ni \usepackage.
+- NO incluyas \section, \subsection, \chapter ni títulos de sección.
+- NO incluyas \abstract{...}, \Abstract{...}, \begin{abstract} ni \end{abstract}.
 - Responde solo con código LaTeX, sin markdown ni explicaciones.
 - Para ecuaciones usa \begin{equation}...\end{equation}.
 - Para listas usa entornos itemize/enumerate de LaTeX estándar.

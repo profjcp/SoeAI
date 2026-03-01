@@ -21,6 +21,12 @@ PATRONES_ENCABEZADOS = [
     r"^\s*\\chapter\*?\{.*\}\s*$",
 ]
 
+PATRONES_ESTRUCTURA = [
+    r"^\s*\\part\*?\{.*\}\s*$",
+    r"^\s*\\subsubsection\*?\{.*\}\s*$",
+    r"^\s*\\paragraph\*?\{.*\}\s*$",
+]
+
 
 def _escape_ampersand_suelto(texto: str) -> str:
     return re.sub(r"(?<!\\)&", r"\\&", texto)
@@ -47,6 +53,7 @@ def _sanitizar_referencias(texto: str) -> str:
 
 def _sanitizar_contenido_seccion(texto: str) -> str:
     lineas_limpias: list[str] = []
+    dentro_de_abstract = False
 
     for linea in texto.splitlines():
         linea_strip = linea.strip()
@@ -54,15 +61,39 @@ def _sanitizar_contenido_seccion(texto: str) -> str:
         if any(re.match(patron, linea_strip) for patron in PATRONES_ENCABEZADOS):
             continue
 
-        if linea_strip.startswith(r"\abstract{"):
-            resto = linea_strip[len(r"\abstract{") :].strip()
+        if any(re.match(patron, linea_strip) for patron in PATRONES_ESTRUCTURA):
+            continue
+
+        if re.match(r"^\\begin\{abstract\}\s*$", linea_strip, flags=re.IGNORECASE):
+            dentro_de_abstract = True
+            continue
+
+        if re.match(r"^\\end\{abstract\}\s*$", linea_strip, flags=re.IGNORECASE):
+            dentro_de_abstract = False
+            continue
+
+        wrapper_match = re.match(r"^\\[Aa]bstract\s*\{?(.*)\}?\s*$", linea_strip)
+        if wrapper_match:
+            resto = wrapper_match.group(1).strip()
             if resto.endswith("}"):
                 resto = resto[:-1].strip()
             if resto:
                 lineas_limpias.append(resto)
+            dentro_de_abstract = True
             continue
 
-        if linea_strip == "}":
+        if dentro_de_abstract and linea_strip == "}":
+            dentro_de_abstract = False
+            continue
+
+        # Quita wrappers de comandos no deseados pero preserva su contenido textual.
+        linea = re.sub(r"\\[A-Za-z]+\*?\{([^{}]*)\}", r"\1", linea)
+
+        # Quita comandos estructurales sueltos (sin llaves).
+        linea = re.sub(r"\\(section|subsection|chapter|part|paragraph|abstract)\*?\b", "", linea)
+
+        # Normaliza llaves huérfanas para evitar ruido de salida.
+        if linea.strip() in {"{", "}"}:
             continue
 
         lineas_limpias.append(linea)
