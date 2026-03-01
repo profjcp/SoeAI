@@ -57,6 +57,9 @@ def _ollama_options() -> dict[str, Any]:
         "repeat_penalty": float(os.getenv("OLLAMA_REPEAT_PENALTY", "1.1")),
         "num_ctx": int(os.getenv("OLLAMA_NUM_CTX", "8192")),
     }
+    num_thread = os.getenv("OLLAMA_NUM_THREAD")
+    if num_thread:
+        options["num_thread"] = int(num_thread)
     num_predict = os.getenv("OLLAMA_NUM_PREDICT")
     if num_predict:
         options["num_predict"] = int(num_predict)
@@ -64,7 +67,20 @@ def _ollama_options() -> dict[str, Any]:
 
 
 def _ollama_timeout() -> float:
-    return float(os.getenv("OLLAMA_TIMEOUT", "120"))
+    return float(os.getenv("OLLAMA_TIMEOUT", "300"))
+
+
+def _ollama_retries() -> int:
+    try:
+        return max(1, int(os.getenv("OLLAMA_RETRIES", "3")))
+    except ValueError:
+        return 3
+
+
+def _es_timeout_error(error: Exception) -> bool:
+    mensaje = str(error).lower()
+    nombre = error.__class__.__name__.lower()
+    return "timeout" in mensaje or "readtimeout" in nombre
 
 
 def _ollama_chat(
@@ -72,13 +88,31 @@ def _ollama_chat(
     modelo: str,
     response_format: str | None = None,
 ) -> dict[str, Any]:
-    client = ollama.Client(timeout=_ollama_timeout())
-    return client.chat(
-        model=modelo,
-        messages=messages,
-        options=_ollama_options(),
-        format=response_format,
-    )
+    timeout_base = _ollama_timeout()
+    intentos = _ollama_retries()
+    ultimo_error: Exception | None = None
+
+    for intento in range(1, intentos + 1):
+        timeout_intento = timeout_base * intento
+        client = ollama.Client(timeout=timeout_intento)
+        try:
+            return client.chat(
+                model=modelo,
+                messages=messages,
+                options=_ollama_options(),
+                format=response_format,
+            )
+        except Exception as error:
+            ultimo_error = error
+            if not _es_timeout_error(error):
+                raise
+            if intento == intentos:
+                raise
+
+    if ultimo_error is not None:
+        raise ultimo_error
+
+    raise RuntimeError("Fallo inesperado al consultar Ollama.")
 
 
 def _normalizar_escapes_llm(texto: str) -> str:

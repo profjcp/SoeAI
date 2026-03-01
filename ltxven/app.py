@@ -45,14 +45,23 @@ def _resolver_modelos(modelo_preferido: str) -> list[str]:
 
 def _generar_seccion_con_fallback(seccion: str, texto: str, norma: str, modelos: list[str]) -> tuple[str, str]:
     ultimo_error: Exception | None = None
+    errores: list[str] = []
     for modelo in modelos:
         try:
-            return texto_a_latex(seccion, texto, norma, modelo=modelo), modelo
+            return texto_a_latex(seccion=seccion, contenido=texto, norma=norma, modelo=modelo), modelo
+        except TypeError:
+            try:
+                return texto_a_latex(texto, seccion, norma, modelo=modelo), modelo
+            except Exception as error:  # noqa: PERF203
+                ultimo_error = error
+                errores.append(f"{modelo}: {type(error).__name__}: {error}")
         except Exception as error:  # noqa: PERF203
             ultimo_error = error
+            errores.append(f"{modelo}: {type(error).__name__}: {error}")
 
+    detalle = " | ".join(errores) if errores else "sin detalle"
     raise RuntimeError(
-        f"No se pudo convertir la sección '{seccion}' con los modelos: {', '.join(modelos)}"
+        f"No se pudo convertir la sección '{seccion}'. Detalle: {detalle}"
     ) from ultimo_error
 
 
@@ -106,6 +115,20 @@ def _limpiar_salida_previa(nombre_archivo: str) -> None:
 def _rich_html_to_text(html_content: str) -> str:
     if not html_content:
         return ""
+
+    if isinstance(html_content, dict):
+        ops = html_content.get("ops", [])
+        partes: list[str] = []
+        for op in ops:
+            if not isinstance(op, dict):
+                continue
+            insercion = op.get("insert", "")
+            if isinstance(insercion, str):
+                partes.append(insercion)
+        html_content = "\n".join(partes)
+
+    if not isinstance(html_content, str):
+        html_content = str(html_content)
 
     if BeautifulSoup is not None:
         soup = BeautifulSoup(html_content, "html.parser")

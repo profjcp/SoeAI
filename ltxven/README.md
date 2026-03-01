@@ -53,6 +53,9 @@ Opcional: editar `.env` para cambiar el modelo.
 Configuración recomendada para estabilidad:
 - `OLLAMA_MODEL=llama3.2`
 - `OLLAMA_FALLBACK_MODEL=llama3.2`
+- `OLLAMA_NUM_THREAD=6` (ajústalo a núcleos físicos - 2 en tu servidor)
+- `OLLAMA_TIMEOUT=300`
+- `OLLAMA_RETRIES=3`
 
 ## 5) Levantar servicios
 

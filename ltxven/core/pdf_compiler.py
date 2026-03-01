@@ -5,6 +5,9 @@ import subprocess
 import time
 
 
+MAX_REINTENTOS_DIRIGIDOS = 3
+
+
 def _run_pdflatex(ruta_tex: str, directorio: str, timeout_seg: int) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [
@@ -21,6 +24,60 @@ def _run_pdflatex(ruta_tex: str, directorio: str, timeout_seg: int) -> subproces
         check=False,
         timeout=timeout_seg,
     )
+
+
+def _limpiar_artefactos_auxiliares(ruta_tex: str) -> None:
+    base = ruta_tex[:-4] if ruta_tex.endswith(".tex") else ruta_tex
+    for ext in (".aux", ".log", ".out"):
+        artefacto = f"{base}{ext}"
+        if os.path.exists(artefacto):
+            os.remove(artefacto)
+
+
+def _extraer_linea_error(salida_pdflatex: str) -> int | None:
+    match = re.search(r"\.tex:(\d+):", salida_pdflatex)
+    if not match:
+        return None
+    try:
+        return int(match.group(1))
+    except ValueError:
+        return None
+
+
+def _reparar_linea_dirigida(ruta_tex: str, numero_linea: int) -> bool:
+    if numero_linea <= 0 or not os.path.exists(ruta_tex):
+        return False
+
+    with open(ruta_tex, "r", encoding="utf-8") as file_tex:
+        lineas = file_tex.read().splitlines()
+
+    idx = numero_linea - 1
+    if idx >= len(lineas):
+        return False
+
+    original = lineas[idx]
+    reparada = original
+
+    reparada = reparada.replace(r"\n", " ").replace(r"\t", " ").replace(r"\r", " ")
+
+    match_texto = re.match(
+        r"^\{\s*['\"]text['\"]\s*:\s*['\"](.*)['\"]\s*,\s*['\"]title['\"]\s*:",
+        reparada.strip(),
+    )
+    if match_texto:
+        reparada = match_texto.group(1).replace("\\\\", "\\")
+
+    reparada = re.sub(r"(?<!\\)&", r"\\&", reparada)
+
+    if reparada == original:
+        return False
+
+    lineas[idx] = reparada
+    with open(ruta_tex, "w", encoding="utf-8") as file_tex:
+        file_tex.write("\n".join(lineas).strip() + "\n")
+
+    _limpiar_artefactos_auxiliares(ruta_tex)
+    return True
 
 
 def _auto_reparar_tex(ruta_tex: str) -> bool:
@@ -106,11 +163,7 @@ def _auto_reparar_tex(ruta_tex: str) -> bool:
     with open(ruta_tex, "w", encoding="utf-8") as file_tex:
         file_tex.write(contenido_reparado)
 
-    base = ruta_tex[:-4] if ruta_tex.endswith(".tex") else ruta_tex
-    for ext in (".aux", ".log", ".out"):
-        artefacto = f"{base}{ext}"
-        if os.path.exists(artefacto):
-            os.remove(artefacto)
+    _limpiar_artefactos_auxiliares(ruta_tex)
 
     return True
 
@@ -159,14 +212,32 @@ def compilar_pdf(ruta_tex: str, timeout_seg: int = 90) -> str:
         compilacion_ok, salida = _compilar_con_pasadas(ruta_tex, directorio, timeout_seg)
 
         if not compilacion_ok:
-            reparado = _auto_reparar_tex(ruta_tex)
-            if reparado:
+            salida_acumulada = salida
+
+            for _ in range(MAX_REINTENTOS_DIRIGIDOS):
+                numero_linea = _extraer_linea_error(salida_acumulada)
+                if numero_linea is None:
+                    break
+
+                reparado_dirigido = _reparar_linea_dirigida(ruta_tex, numero_linea)
+                if not reparado_dirigido:
+                    break
+
                 compilacion_ok, salida = _compilar_con_pasadas(ruta_tex, directorio, timeout_seg)
+                salida_acumulada = f"{salida_acumulada}\n\n--- reintento dirigido ---\n{salida}"
+                if compilacion_ok:
+                    break
+
+            if not compilacion_ok:
+                reparado = _auto_reparar_tex(ruta_tex)
+                if reparado:
+                    compilacion_ok, salida = _compilar_con_pasadas(ruta_tex, directorio, timeout_seg)
+                    salida_acumulada = f"{salida_acumulada}\n\n--- reintento auto-reparación ---\n{salida}"
 
             if not compilacion_ok:
                 raise RuntimeError(
                     "Error en compilación de pdflatex tras intento de auto-reparación."
-                    f"\n--- salida ---\n{salida[-6000:]}"
+                    f"\n--- salida ---\n{salida_acumulada[-6000:]}"
                 )
     except subprocess.TimeoutExpired as error:
         raise RuntimeError(
