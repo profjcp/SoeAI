@@ -22,6 +22,53 @@ from core.ollama_client import texto_a_latex
 from core.pdf_compiler import compilar_pdf
 
 
+def _escape_latex_plain(text: str) -> str:
+    replacements = {
+        "\\": r"\textbackslash{}",
+        "&": r"\&",
+        "%": r"\%",
+        "$": r"\$",
+        "#": r"\#",
+        "_": r"\_",
+        "{": r"\{",
+        "}": r"\}",
+        "~": r"\textasciitilde{}",
+        "^": r"\textasciicircum{}",
+    }
+    result = text
+    for source, target in replacements.items():
+        result = result.replace(source, target)
+    return result
+
+
+def _metadata_a_latex(clave: str, texto: str) -> str:
+    limpio = texto.strip()
+    if not limpio:
+        return ""
+
+    if clave == "title":
+        return _escape_latex_plain(" ".join(limpio.splitlines())).strip()
+
+    if clave == "authors":
+        autores = [_escape_latex_plain(linea.strip()) for linea in limpio.splitlines() if linea.strip()]
+        return r" \\ ".join(autores)
+
+    if clave == "keywords":
+        keywords = " ".join(limpio.splitlines())
+        return _escape_latex_plain(keywords).strip()
+
+    return _escape_latex_plain(limpio)
+
+
+def _limpiar_salida_previa(nombre_archivo: str) -> None:
+    base_path = Path("output") / nombre_archivo
+    extensiones = [".aux", ".log", ".out", ".pdf", ".tex"]
+    for ext in extensiones:
+        archivo = base_path.with_suffix(ext)
+        if archivo.exists():
+            archivo.unlink()
+
+
 def _rich_html_to_text(html_content: str) -> str:
     if not html_content:
         return ""
@@ -101,6 +148,7 @@ if st.button("🚀 Generar PDF", type="primary"):
         tiempo_ollama_total = 0.0
         tiempo_por_seccion: dict[str, float] = {}
         etiquetas_campos = {clave: etiqueta for clave, etiqueta, _, _ in campos}
+        secciones_metadata = {"title", "authors", "keywords"}
         total_pasos = len(secciones_no_vacias) + 3
         paso_actual = 0
 
@@ -118,15 +166,23 @@ if st.button("🚀 Generar PDF", type="primary"):
 
             for index, (clave, texto) in enumerate(secciones_no_vacias.items(), start=1):
                 nombre_seccion = etiquetas_campos.get(clave, clave)
-                etapa_actual.info(f"⏳ Etapa actual: Ollama convirtiendo sección '{nombre_seccion}'")
                 detalle_etapa.caption(f"Procesando sección {index}/{len(secciones_no_vacias)}")
-                status.write(f"Ollama: convirtiendo sección '{nombre_seccion}'...")
 
-                inicio_seccion = time.perf_counter()
-                latex_secciones[clave] = texto_a_latex(clave, texto, norma, modelo=modelo)
-                duracion_seccion = time.perf_counter() - inicio_seccion
+                if clave in secciones_metadata:
+                    etapa_actual.info(f"⏳ Etapa actual: Formateando sección '{nombre_seccion}'")
+                    status.write(f"Formato local: preparando sección '{nombre_seccion}'...")
+                    inicio_seccion = time.perf_counter()
+                    latex_secciones[clave] = _metadata_a_latex(clave, texto)
+                    duracion_seccion = time.perf_counter() - inicio_seccion
+                else:
+                    etapa_actual.info(f"⏳ Etapa actual: Ollama convirtiendo sección '{nombre_seccion}'")
+                    status.write(f"Ollama: convirtiendo sección '{nombre_seccion}'...")
+                    inicio_seccion = time.perf_counter()
+                    latex_secciones[clave] = texto_a_latex(clave, texto, norma, modelo=modelo)
+                    duracion_seccion = time.perf_counter() - inicio_seccion
+                    tiempo_ollama_total += duracion_seccion
+
                 tiempo_por_seccion[clave] = duracion_seccion
-                tiempo_ollama_total += duracion_seccion
 
                 paso_actual += 1
                 progress.progress(
@@ -137,6 +193,9 @@ if st.button("🚀 Generar PDF", type="primary"):
             etapa_actual.info("⏳ Etapa actual: Ensamblando documento LaTeX")
             detalle_etapa.caption("Insertando secciones en la plantilla seleccionada")
             status.write("Ensamblando documento final .tex...")
+
+            status.write("Limpiando archivos previos de salida...")
+            _limpiar_salida_previa(nombre_archivo)
 
             documento = ensamblar_documento(latex_secciones, norma)
             ruta_tex = guardar_tex(documento, nombre=nombre_archivo)
