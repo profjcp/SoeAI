@@ -1,12 +1,40 @@
 import os
+import re
+import time
+from html import unescape
 from pathlib import Path
 
 import streamlit as st
 from dotenv import load_dotenv
 
+try:
+    from bs4 import BeautifulSoup
+except ImportError:
+    BeautifulSoup = None
+
+try:
+    from streamlit_quill import st_quill
+except ImportError:
+    st_quill = None
+
 from core.latex_builder import ensamblar_documento, guardar_tex
 from core.ollama_client import texto_a_latex
 from core.pdf_compiler import compilar_pdf
+
+
+def _rich_html_to_text(html_content: str) -> str:
+    if not html_content:
+        return ""
+
+    if BeautifulSoup is not None:
+        soup = BeautifulSoup(html_content, "html.parser")
+        raw_text = soup.get_text("\n")
+    else:
+        raw_text = re.sub(r"<[^>]+>", " ", html_content)
+        raw_text = unescape(raw_text)
+
+    lineas = [linea.strip() for linea in raw_text.splitlines()]
+    return "\n".join(linea for linea in lineas if linea)
 
 
 load_dotenv()
@@ -16,6 +44,14 @@ st.title("📄 Generador de Artículos Científicos")
 st.caption("Escribe tu artículo en texto plano. La IA lo convierte a LaTeX y PDF.")
 
 norma = st.selectbox("📐 Selecciona la norma:", ["IEEE", "APA"])
+usar_editor_enriquecido = st.toggle(
+    "📝 Usar editor enriquecido en campos largos",
+    value=True,
+    help="Permite aplicar formato visual al escribir; la app lo convierte automáticamente a texto limpio para LaTeX.",
+)
+
+if usar_editor_enriquecido and st_quill is None:
+    st.warning("Editor enriquecido no disponible aún. Instala dependencias con: pip install -r requirements.txt")
 
 campos = [
     ("title", "Título del artículo", "input", 1),
@@ -36,7 +72,17 @@ for clave, etiqueta, tipo, alto in campos:
     if tipo == "input":
         entradas[clave] = st.text_input(etiqueta)
     else:
-        entradas[clave] = st.text_area(etiqueta, height=alto)
+        if usar_editor_enriquecido and st_quill is not None:
+            st.markdown(f"**{etiqueta}**")
+            contenido_html = st_quill(
+                key=f"quill_{clave}",
+                placeholder=f"Escribe aquí: {etiqueta}",
+                html=True,
+                toolbar=None,
+            )
+            entradas[clave] = _rich_html_to_text(contenido_html)
+        else:
+            entradas[clave] = st.text_area(etiqueta, height=alto)
 
 col1, col2 = st.columns([1, 1])
 with col1:
@@ -52,19 +98,83 @@ if st.button("🚀 Generar PDF", type="primary"):
         st.stop()
 
     try:
-        with st.spinner("Convirtiendo secciones a LaTeX con Ollama..."):
+        tiempo_ollama_total = 0.0
+        tiempo_por_seccion: dict[str, float] = {}
+        etiquetas_campos = {clave: etiqueta for clave, etiqueta, _, _ in campos}
+        total_pasos = len(secciones_no_vacias) + 3
+        paso_actual = 0
+
+        etapa_actual = st.empty()
+        detalle_etapa = st.empty()
+        progress = st.progress(0, text="Etapa 0/{}: Inicializando...".format(total_pasos))
+
+        with st.status("Generando documento...", expanded=True) as status:
+            etapa_actual.info("⏳ Etapa actual: Preparando datos de entrada")
+            status.write("Preparando secciones no vacías...")
+            paso_actual += 1
+            progress.progress(paso_actual / total_pasos, text=f"Etapa {paso_actual}/{total_pasos}: Preparación")
+
             latex_secciones: dict[str, str] = {}
-            progress = st.progress(0)
 
             for index, (clave, texto) in enumerate(secciones_no_vacias.items(), start=1):
-                latex_secciones[clave] = texto_a_latex(clave, texto, norma, modelo=modelo)
-                progress.progress(index / len(secciones_no_vacias))
+                nombre_seccion = etiquetas_campos.get(clave, clave)
+                etapa_actual.info(f"⏳ Etapa actual: Ollama convirtiendo sección '{nombre_seccion}'")
+                detalle_etapa.caption(f"Procesando sección {index}/{len(secciones_no_vacias)}")
+                status.write(f"Ollama: convirtiendo sección '{nombre_seccion}'...")
 
-        documento = ensamblar_documento(latex_secciones, norma)
-        ruta_tex = guardar_tex(documento, nombre=nombre_archivo)
-        ruta_pdf = compilar_pdf(ruta_tex)
+                inicio_seccion = time.perf_counter()
+                latex_secciones[clave] = texto_a_latex(clave, texto, norma, modelo=modelo)
+                duracion_seccion = time.perf_counter() - inicio_seccion
+                tiempo_por_seccion[clave] = duracion_seccion
+                tiempo_ollama_total += duracion_seccion
+
+                paso_actual += 1
+                progress.progress(
+                    paso_actual / total_pasos,
+                    text=f"Etapa {paso_actual}/{total_pasos}: Sección '{nombre_seccion}' completada",
+                )
+
+            etapa_actual.info("⏳ Etapa actual: Ensamblando documento LaTeX")
+            detalle_etapa.caption("Insertando secciones en la plantilla seleccionada")
+            status.write("Ensamblando documento final .tex...")
+
+            documento = ensamblar_documento(latex_secciones, norma)
+            ruta_tex = guardar_tex(documento, nombre=nombre_archivo)
+
+            paso_actual += 1
+            progress.progress(paso_actual / total_pasos, text=f"Etapa {paso_actual}/{total_pasos}: Documento .tex listo")
+
+            etapa_actual.info("⏳ Etapa actual: Compilando PDF con pdflatex")
+            detalle_etapa.caption("Ejecutando compilación LaTeX")
+            status.write("Compilando PDF con pdflatex...")
+
+            inicio_pdf = time.perf_counter()
+            ruta_pdf = compilar_pdf(ruta_tex)
+            tiempo_pdf = time.perf_counter() - inicio_pdf
+            tiempo_total = tiempo_ollama_total + tiempo_pdf
+
+            paso_actual += 1
+            progress.progress(paso_actual / total_pasos, text=f"Etapa {paso_actual}/{total_pasos}: PDF generado")
+
+            etapa_actual.success("✅ Etapa actual: Generación finalizada")
+            detalle_etapa.caption("Todo listo para descargar")
+            status.update(label="✅ Generación completada", state="complete")
 
         st.success("✅ PDF generado exitosamente")
+
+        col_metric_1, col_metric_2, col_metric_3 = st.columns(3)
+        col_metric_1.metric("⏱️ Tiempo Ollama", f"{tiempo_ollama_total:.2f}s")
+        col_metric_2.metric("🧾 Tiempo PDF", f"{tiempo_pdf:.2f}s")
+        col_metric_3.metric("📊 Tiempo total", f"{tiempo_total:.2f}s")
+
+        if tiempo_ollama_total > tiempo_pdf:
+            st.info("Bottleneck detectado: Ollama (conversión texto → LaTeX).")
+        else:
+            st.info("Bottleneck detectado: compilación LaTeX a PDF.")
+
+        with st.expander("Ver tiempos por sección (Ollama)"):
+            for seccion, duracion in tiempo_por_seccion.items():
+                st.write(f"- {seccion}: {duracion:.2f}s")
 
         with open(ruta_tex, "rb") as tex_file:
             st.download_button(

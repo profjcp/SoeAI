@@ -1,3 +1,5 @@
 streamlit>=1.45.0
 ollama>=0.6.0
 python-dotenv>=1.0.1
+streamlit-quill>=0.0.3
+beautifulsoup4>=4.12.3
