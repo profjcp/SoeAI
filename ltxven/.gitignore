@@ -7,3 +7,4 @@ output/*.tex
 output/*.log
 output/*.aux
 output/*.out
+output/history/

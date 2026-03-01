@@ -18,6 +18,7 @@ except ImportError:
     st_quill = None
 
 from core.latex_builder import ensamblar_documento, guardar_tex
+from core.history_store import list_snapshots, load_payload, save_snapshot, update_snapshot
 from core.ollama_client import texto_a_latex
 from core.pdf_compiler import compilar_pdf
 
@@ -84,16 +85,57 @@ def _rich_html_to_text(html_content: str) -> str:
     return "\n".join(linea for linea in lineas if linea)
 
 
+def _restaurar_payload(payload: dict) -> None:
+    st.session_state["norma_select"] = payload.get("norma", "IEEE")
+    st.session_state["toggle_rich_editor"] = payload.get("usar_editor_enriquecido", True)
+    st.session_state["modelo_input"] = payload.get("modelo", os.getenv("OLLAMA_MODEL", "llama3.2"))
+    st.session_state["nombre_archivo_input"] = payload.get("nombre_archivo", "articulo")
+
+    secciones = payload.get("secciones", {})
+    if isinstance(secciones, dict):
+        for clave, valor in secciones.items():
+            st.session_state[f"field_{clave}"] = str(valor or "")
+            st.session_state[f"quill_{clave}"] = str(valor or "")
+
+
 load_dotenv()
 
 st.set_page_config(page_title="LaTeX Article Generator", layout="wide")
 st.title("📄 Generador de Artículos Científicos")
 st.caption("Escribe tu artículo en texto plano. La IA lo convierte a LaTeX y PDF.")
 
-norma = st.selectbox("📐 Selecciona la norma:", ["IEEE", "APA"])
+if "norma_select" not in st.session_state:
+    st.session_state["norma_select"] = "IEEE"
+if "toggle_rich_editor" not in st.session_state:
+    st.session_state["toggle_rich_editor"] = True
+if "modelo_input" not in st.session_state:
+    st.session_state["modelo_input"] = os.getenv("OLLAMA_MODEL", "llama3.2")
+if "nombre_archivo_input" not in st.session_state:
+    st.session_state["nombre_archivo_input"] = "articulo"
+
+with st.sidebar:
+    st.subheader("📚 Histórico")
+    snapshots = list_snapshots(limit=20)
+    opciones = [""] + [f"{item['run_id']} | {item.get('status', 'pending')}" for item in snapshots]
+    seleccion = st.selectbox("Recuperar ejecución", opciones)
+
+    if st.button("Cargar histórico"):
+        if seleccion:
+            run_id = seleccion.split(" | ")[0]
+            payload = load_payload(run_id)
+            if payload:
+                _restaurar_payload(payload)
+                st.success("Histórico cargado. Formulario restaurado.")
+                st.rerun()
+            else:
+                st.warning("No se pudo cargar ese histórico.")
+        else:
+            st.info("Selecciona un histórico para cargar.")
+
+norma = st.selectbox("📐 Selecciona la norma:", ["IEEE", "APA"], key="norma_select")
 usar_editor_enriquecido = st.toggle(
     "📝 Usar editor enriquecido en campos largos",
-    value=True,
+    key="toggle_rich_editor",
     help="Permite aplicar formato visual al escribir; la app lo convierte automáticamente a texto limpio para LaTeX.",
 )
 
@@ -117,30 +159,41 @@ campos = [
 entradas: dict[str, str] = {}
 for clave, etiqueta, tipo, alto in campos:
     if tipo == "input":
-        entradas[clave] = st.text_input(etiqueta)
+        entradas[clave] = st.text_input(etiqueta, key=f"field_{clave}")
     else:
         if usar_editor_enriquecido and st_quill is not None:
             st.markdown(f"**{etiqueta}**")
             contenido_html = st_quill(
                 key=f"quill_{clave}",
+                value=st.session_state.get(f"quill_{clave}", ""),
                 placeholder=f"Escribe aquí: {etiqueta}",
                 html=True,
                 toolbar=None,
             )
             entradas[clave] = _rich_html_to_text(contenido_html)
         else:
-            entradas[clave] = st.text_area(etiqueta, height=alto)
+            entradas[clave] = st.text_area(etiqueta, height=alto, key=f"field_{clave}")
 
 col1, col2 = st.columns([1, 1])
 with col1:
-    modelo = st.text_input("🤖 Modelo Ollama", value=os.getenv("OLLAMA_MODEL", "llama3.2"))
+    modelo = st.text_input("🤖 Modelo Ollama", key="modelo_input")
 with col2:
-    nombre_archivo = st.text_input("📁 Nombre de salida", value="articulo")
+    nombre_archivo = st.text_input("📁 Nombre de salida", key="nombre_archivo_input")
 
 if st.button("🚀 Generar PDF", type="primary"):
+    payload_snapshot = {
+        "norma": norma,
+        "usar_editor_enriquecido": usar_editor_enriquecido,
+        "modelo": modelo,
+        "nombre_archivo": nombre_archivo,
+        "secciones": entradas,
+    }
+    run_id = save_snapshot(payload_snapshot)
+
     secciones_no_vacias = {k: v for k, v in entradas.items() if v.strip()}
 
     if not secciones_no_vacias:
+        update_snapshot(run_id, status="error", error="No se ingresaron secciones con contenido.")
         st.warning("Escribe al menos una sección antes de generar.")
         st.stop()
 
@@ -219,6 +272,8 @@ if st.button("🚀 Generar PDF", type="primary"):
             detalle_etapa.caption("Todo listo para descargar")
             status.update(label="✅ Generación completada", state="complete")
 
+        update_snapshot(run_id, status="ok", pdf_path=ruta_pdf)
+
         st.success("✅ PDF generado exitosamente")
 
         col_metric_1, col_metric_2, col_metric_3 = st.columns(3)
@@ -252,5 +307,7 @@ if st.button("🚀 Generar PDF", type="primary"):
             )
 
     except Exception as error:
+        update_snapshot(run_id, status="error", error=str(error))
         st.error(f"❌ Error: {error}")
         st.info("Revisa que Ollama esté corriendo y que `pdflatex` esté instalado.")
+        st.caption(f"Histórico guardado con ID: {run_id}")
