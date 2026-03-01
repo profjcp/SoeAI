@@ -17,7 +17,30 @@ COMANDOS_PROHIBIDOS = [
 ]
 
 
-def _sanitizar_latex_generado(texto: str) -> str:
+def _escape_ampersand_suelto(texto: str) -> str:
+    return re.sub(r"(?<!\\)&", r"\\&", texto)
+
+
+def _sanitizar_referencias(texto: str) -> str:
+    lineas_limpias: list[str] = []
+
+    for linea in texto.splitlines():
+        linea_strip = linea.strip()
+
+        if re.match(r"\\begin\{(itemize|enumerate|thebibliography)\}", linea_strip):
+            continue
+        if re.match(r"\\end\{(itemize|enumerate|thebibliography)\}", linea_strip):
+            continue
+
+        linea = re.sub(r"^\s*\\item\s*", "", linea)
+        linea = re.sub(r"^\s*\\bibitem\{[^}]*\}\s*", "", linea)
+        lineas_limpias.append(linea)
+
+    resultado = "\n".join(lineas_limpias)
+    return _escape_ampersand_suelto(resultado)
+
+
+def _sanitizar_latex_generado(texto: str, seccion: str) -> str:
     lineas_limpias: list[str] = []
 
     for linea in texto.splitlines():
@@ -32,6 +55,10 @@ def _sanitizar_latex_generado(texto: str) -> str:
         lineas_limpias.append(linea)
 
     resultado = "\n".join(lineas_limpias).strip()
+
+    if seccion.lower() == "references":
+        resultado = _sanitizar_referencias(resultado)
+
     return resultado
 
 
@@ -58,4 +85,4 @@ Genera SOLO el código LaTeX de esta sección, sin explicaciones."""
     )
 
     contenido = response["message"]["content"].strip()
-    return _sanitizar_latex_generado(contenido)
+    return _sanitizar_latex_generado(contenido, seccion)
