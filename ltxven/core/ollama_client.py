@@ -16,6 +16,11 @@ COMANDOS_PROHIBIDOS = [
     r"\\institute\{",
 ]
 
+PATRONES_ENCABEZADOS = [
+    r"^\s*\\section\*?\{.*\}\s*$",
+    r"^\s*\\chapter\*?\{.*\}\s*$",
+]
+
 
 def _escape_ampersand_suelto(texto: str) -> str:
     return re.sub(r"(?<!\\)&", r"\\&", texto)
@@ -40,6 +45,31 @@ def _sanitizar_referencias(texto: str) -> str:
     return _escape_ampersand_suelto(resultado)
 
 
+def _sanitizar_contenido_seccion(texto: str) -> str:
+    lineas_limpias: list[str] = []
+
+    for linea in texto.splitlines():
+        linea_strip = linea.strip()
+
+        if any(re.match(patron, linea_strip) for patron in PATRONES_ENCABEZADOS):
+            continue
+
+        if linea_strip.startswith(r"\abstract{"):
+            resto = linea_strip[len(r"\abstract{") :].strip()
+            if resto.endswith("}"):
+                resto = resto[:-1].strip()
+            if resto:
+                lineas_limpias.append(resto)
+            continue
+
+        if linea_strip == "}":
+            continue
+
+        lineas_limpias.append(linea)
+
+    return "\n".join(lineas_limpias).strip()
+
+
 def _sanitizar_latex_generado(texto: str, seccion: str) -> str:
     lineas_limpias: list[str] = []
 
@@ -58,6 +88,8 @@ def _sanitizar_latex_generado(texto: str, seccion: str) -> str:
 
     if seccion.lower() == "references":
         resultado = _sanitizar_referencias(resultado)
+    else:
+        resultado = _sanitizar_contenido_seccion(resultado)
 
     return resultado
 
